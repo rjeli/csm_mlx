@@ -54,8 +54,11 @@ class SingleBatchGenerator:
         mx.eval(code0_logits, hidden_states)
 
         # TODO more rigorous sampling
-        token_ids = min_p_sampling(code0_logits, min_p=0.1, temperature=1)
-        # token_ids = mx.argmax(code0_logits, keepdims=True)
+        token_ids = min_p_sampling(
+            code0_logits,
+            min_p=self.generation_settings.min_p,
+            temperature=self.generation_settings.default_temp,
+        )
         c0_sample = token_ids[mx.newaxis, :]
         c0_embed = self.model.embed_audio(0, c0_sample)
         curr_h = mx.concat([hidden_states[:, mx.newaxis, :], c0_embed], axis=1)
@@ -67,9 +70,11 @@ class SingleBatchGenerator:
                 curr_h, decoder_cache, codebook_idx=i
             )
             # TODO make this configurable
-            ci_sample = top_k_sampling(code_logits, top_k=64, temperature=0.95)[
-                mx.newaxis, :
-            ]
+            ci_sample = top_k_sampling(
+                code_logits,
+                top_k=self.generation_settings.top_k,
+                temperature=self.generation_settings.default_fast_temp,
+            )[mx.newaxis, :]
             curr_h = self.model.embed_audio(i, ci_sample)
             curr_sample = mx.concat([curr_sample, ci_sample], axis=1)
 
