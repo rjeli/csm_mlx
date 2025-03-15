@@ -1,0 +1,6 @@
+.env
+.venv
+*.egg-info
+inits
+__pycache__
+out.wav

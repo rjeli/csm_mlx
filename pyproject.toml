@@ -1,0 +1,35 @@
+[project]
+name = "csm-mlx"
+version = "0.1.0"
+description = "Add your description here"
+readme = "README.md"
+requires-python = ">=3.13"
+dependencies = [
+    "fastapi>=0.115.11",
+    "huggingface-hub>=0.29.3",
+    "mlx>=0.23.2",
+    "mlx-lm>=0.22.0",
+    "numpy>=2.2.3",
+    "pydantic>=2.10.6",
+    "safetensors>=0.5.3",
+    "scipy>=1.15.2",
+    "soundfile>=0.13.1",
+    "tokenizers>=0.21.1",
+    "tqdm>=4.67.1",
+    "uvicorn[standard]>=0.34.0",
+]
+
+[build-system]
+requires = ["setuptools>=61"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+include = ["csm_mlx*"]
+
+[dependency-groups]
+dev = [
+    "ipykernel>=6.29.5",
+    "safetensors>=0.5.3",
+    "torch>=2.6.0",
+]
