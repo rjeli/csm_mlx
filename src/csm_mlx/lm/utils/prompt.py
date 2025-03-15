@@ -87,13 +87,18 @@ class CSMPromptEncoder:
         return (text_frame, text_frame_mask)
 
     def tokenize_audio(self, mimi_codes: mx.array):
-        assert mimi_codes.ndim == 2
-        mimi_codes = mimi_codes.transpose(0, 1)
+        if mimi_codes.ndim == 3:
+            if mimi_codes.shape[0] != 1:
+                raise ValueError("Batching not yet supported")
+            else:
+                mimi_codes = mimi_codes.squeeze(0)
+
         eos_frame = mx.zeros([mimi_codes.shape[0], 1])
+        audio_tokens = mx.concat([mimi_codes, eos_frame], axis=1)
         # TODO is this right? check this later
-        audio_frame = mx.concat([mimi_codes, eos_frame], axis=0)
-        audio_frame = mx.concat(
-            [audio_frame, mx.zeros([audio_frame.shape[0], 1])], axis=1
-        )
-        audio_frame_mask = audio_frame != 0
+        audio_frame = mx.zeros([audio_tokens.shape[1], self.depth + 1], dtype=mx.int64)
+        audio_frame_mask = mx.zeros_like(audio_frame)
+
+        audio_frame[:, :-1] = audio_tokens.transpose(1, 0)
+        audio_frame_mask[:, :-1] = True
         return (audio_frame, audio_frame_mask)
