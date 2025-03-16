@@ -1,11 +1,14 @@
+from typing import Any, List, Optional, Tuple
+
 import mlx.core as mx
 import mlx.nn as nn
-from mlx_lm.models.rope_utils import Llama3RoPE
+from einops.array_api import rearrange
+from mlx_lm.models.base import scaled_dot_product_attention
 from pydantic import BaseModel, Field
 from tokenizers import Tokenizer
-from typing import Any, Optional, List, Tuple
 
 from csm_mlx.lm.config import ModelType
+from csm_mlx.lm.utils.rope import Llama3RoPE
 
 
 class RopeScaling(BaseModel):
@@ -301,35 +304,28 @@ class Attention(nn.Module):
     def __call__(
         self, x: mx.array, mask: Optional[mx.array] = None, cache: Optional[Any] = None
     ) -> mx.array:
-        bsz, seqlen, _ = x.shape
         qkv = self.wqkv(x)
+        qkv = rearrange(qkv, "b s (h d) -> b h s d", d=self.head_dim)
+        q, k, v = qkv.split([self.n_head, self.n_head + self.n_local_heads], axis=1)
 
-        # Split qkv back to constituent sections
-        kv_size = self.n_local_heads * self.head_dim
-        raw = qkv.split([self.dim, self.dim + kv_size], axis=-1)
-        q, k, v = raw
-
-        q = q.reshape((bsz, seqlen, self.n_head, self.head_dim))
-        k = k.reshape((bsz, seqlen, self.n_local_heads, self.head_dim))
-        v = v.reshape((bsz, seqlen, self.n_local_heads, self.head_dim))
-
-        q, k, v = map(lambda x: x.transpose(0, 2, 1, 3), (q, k, v))
         if cache is not None:
             q = self.rope(q, offset=cache.offset)
             k = self.rope(k, offset=cache.offset)
             k, v = cache.update_and_fetch(k, v)
-
         else:
-            # q, k, v = map(lambda x: x.transpose(0, 2, 1, 3), (q, k, v))
             q = self.rope(q)
             k = self.rope(k)
 
-        output = mx.fast.scaled_dot_product_attention(
-            q=q, k=k, v=v, scale=self.scale, mask=mask
+        output = scaled_dot_product_attention(
+            queries=q,
+            keys=k,
+            values=v,
+            cache=cache,
+            scale=self.scale,
+            mask=mask,
         )
-        output = output.transpose(0, 2, 1, 3).reshape(bsz, seqlen, -1)
-        out_proj = self.wo(output)
-        return out_proj
+        output = rearrange(output, "b h s d -> b s (h d)")
+        return self.wo(output)
 
 
 class MLP(nn.Module):

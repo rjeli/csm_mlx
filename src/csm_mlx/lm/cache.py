@@ -1,9 +1,14 @@
+from typing import Any, List, Optional
+
 import mlx.core as mx
 import mlx.nn as nn
-from typing import Any, List
 
 
 class KVCache:
+    keys: mx.array
+    values: mx.array
+    offset: int
+
     def __init__(self):
         self.keys = None
         self.values = None
@@ -20,6 +25,16 @@ class KVCache:
 
         self.offset += keys.shape[2]
         return self.keys, self.values
+
+    @property
+    def state(self):
+        if self.offset == self.keys.shape[2]:
+            return self.keys, self.values
+        else:
+            return (
+                self.keys[..., : self.offset, :],
+                self.values[..., : self.offset, :],
+            )
 
 
 def make_prompt_cache(model: nn.Module, is_fast: bool = False) -> List[Any]:

@@ -1,10 +1,11 @@
-import mlx.core as mx
-from typing import Optional, List
+from typing import List, Optional
 
-from csm_mlx.lm.cache import make_prompt_cache, KVCache
+import mlx.core as mx
+
+from csm_mlx.generate.utils import GenerationSettings
+from csm_mlx.lm.cache import KVCache, make_prompt_cache
 from csm_mlx.lm.csm import CSMModel
 from csm_mlx.lm.utils.samplers import min_p_sampling, top_k_sampling
-from csm_mlx.generate.utils import GenerationSettings
 
 
 class SingleBatchGenerator:
@@ -27,11 +28,6 @@ class SingleBatchGenerator:
     ):
         self.model = model
         self.n_generated = 0
-        self.max_new_tokens = (
-            generation_settings.max_new_tokens
-            if generation_settings.max_new_tokens is not None
-            else model.config.max_seq_len
-        )
 
         self.prompt = prompt
         self.prompt_mask = prompt_mask
@@ -43,7 +39,7 @@ class SingleBatchGenerator:
         return self
 
     def __next__(self):
-        if self.n_generated > self.max_new_tokens:
+        if self.n_generated > self.generation_settings.max_new_tokens:
             raise StopIteration
         elif self.prompt is None or self.prompt_mask is None:
             raise StopIteration
@@ -51,7 +47,7 @@ class SingleBatchGenerator:
         code0_logits, hidden_states = self.model.forward_generate(
             self.prompt, self.prompt_mask, self.cache
         )
-        mx.eval(code0_logits, hidden_states)
+        # mx.eval(code0_logits, hidden_states)
 
         # TODO more rigorous sampling
         token_ids = min_p_sampling(

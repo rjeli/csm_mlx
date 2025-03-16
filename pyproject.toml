@@ -3,8 +3,9 @@ name = "csm-mlx"
 version = "0.1.0"
 description = "Add your description here"
 readme = "README.md"
-requires-python = ">=3.13"
+requires-python = ">=3.12"
 dependencies = [
+    "einops>=0.8.1",
     "fastapi>=0.115.11",
     "huggingface-hub>=0.29.3",
     "mlx>=0.23.2",
@@ -30,6 +31,11 @@ include = ["csm_mlx*"]
 [dependency-groups]
 dev = [
     "ipykernel>=6.29.5",
+    "ipywidgets>=8.1.5",
+    "jupyterlab>=4.3.6",
     "safetensors>=0.5.3",
     "torch>=2.6.0",
 ]
+
+[tool.basedpyright]
+typeCheckingMode = 'basic'
