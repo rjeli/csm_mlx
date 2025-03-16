@@ -2,11 +2,8 @@
 
 import argparse
 import os
-import time
 import typing as t
 from functools import partial
-
-os.environ["MTL_CAPTURE_ENABLED"] = "1"
 
 import mlx.core as mx
 import mlx.nn as nn
@@ -23,8 +20,6 @@ from csm_mlx.lm.csm import CSMModel
 from csm_mlx.lm.utils.samplers import min_p_sampling, top_k_sampling
 from csm_mlx.loaders import CSM
 from csm_mlx.loaders.csm import Segment
-
-# from csm_mlx.lm.cache import KVCache, make_prompt_cache
 
 
 def load_wav(path: str) -> NDArray[np.float64]:
@@ -129,6 +124,7 @@ def generate_step(
         y, y_mask = _step(y, y_mask)
         mx.eval(y, y_mask)
 
+    # hmm
     # _step = mx.compile(_step, inputs=[prompt_cache])
 
     for n in range(max_tokens):
@@ -155,6 +151,7 @@ if __name__ == "__main__":
 
     mx.metal.set_wired_limit(10 * (1024**3))
 
+    # possibly faster but not for me
     # model.model.set_dtype(mx.float16)
 
     if args.q is not None:
@@ -164,10 +161,6 @@ if __name__ == "__main__":
             group_size=32 if args.q == 4 else 64,
         )
 
-    # text = "So, if you insist on this newscasting route, you're going to need to do some serious filtering."
-    # text = "So, if you insist on this newscasting route, you're going to need some serious poop to back it up."
-    # text = "So, if you insist on this newscasting route, you're going to need to do some serious filtering. Strip out those verbal tics. Force it to adopt a more sophisticated vocabulary. And for the love of all that is unholy, teach it to be concise!"
-    # text = "Hi, what's up?"
     import inspect
 
     text = inspect.cleandoc(
@@ -181,10 +174,9 @@ if __name__ == "__main__":
         """
         if True
         else """
-        A mirror and
-        exaltation of the false intellect of the nerd, that never leaves
-        the stream of words, syllogisms, motives and desire, that is
-        always forced and contrived, because its under pressure of
+        A mirror and exaltation of the false intellect of the nerd, that 
+        never leaves the stream of words, syllogisms, motives and desire,
+        that is always forced and contrived, because its under pressure of
         some petty need. And its really grotesque.
         """
     ).replace("\n", " ")
@@ -226,14 +218,13 @@ if __name__ == "__main__":
     codes = []
 
     for i, code in enumerate(tqdm(gen)):
-        if "TRACE" in os.environ:
+        if "MTL_CAPTURE_ENABLED" in os.environ:
             if i == 5:
                 print("start cap")
                 mx.metal.start_capture("trace.gputrace")
             if i == 6:
                 print("stop cap")
                 mx.metal.stop_capture()
-
         if mx.all(code == 0):
             break
         codes.append(code)
@@ -248,38 +239,3 @@ if __name__ == "__main__":
     # with open(f"out_{q}.wav", "wb") as f:
     with open("out.wav", "wb") as f:
         f.write(pcm_to_wav_bytes(pcm))
-
-"""
-gen = SingleBatchGenerator(model.model, prompt, prompt_mask, gen_settings)
-
-codes = []
-
-# accumulate codes blocking
-for i, step in enumerate(tqdm(gen)):
-    if i == 10:
-        print("start cap")
-        # mx.metal.start_capture("mlx_trace.gputrace")
-    if i == 11:
-        print("stop cap")
-        # mx.metal.stop_capture()
-
-    if step is not None:
-        codes.append(step)
-
-mx.eval(codes)
-
-out_len = len(codes) - 1
-codes = mx.concat(codes, axis=-1)
-
-frame_rate = 12.5
-
-pcm = model.codec.decode(codes)
-# print(f"Generated in {decode_duration:.2f}s ({(out_len / decode_duration):.2f} tokens/s, {((decode_duration * 1000) / out_len):.2f}ms/token), {(out_len / frame_rate) / decode_duration:.2f}x realtime" )
-
-mx.metal.clear_cache()
-pcm = np.array(pcm).flatten()
-
-print(pcm.shape)
-with open("out.wav", "wb") as f:
-    f.write(pcm_to_wav_bytes(pcm))
-"""
