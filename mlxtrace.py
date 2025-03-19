@@ -64,10 +64,15 @@ def generate_step(
     fast_sampler = fast_sampler or (lambda x: mx.argmax(x, axis=-1))
     prompt_progress_callback = prompt_progress_callback or (lambda *_: None)
 
-    prompt_cache = [KVCache() for _ in range(len(model.layers))]
-
     if kv_group_size is None:
         kv_group_size = 32 if kv_bits == 4 else 64
+
+    prompt_cache = [
+        QuantizedKVCache(bits=kv_bits, group_size=kv_group_size)
+        if kv_bits is not None
+        else KVCache()
+        for _ in range(len(model.layers))
+    ]
 
     quantize_cache_fn = partial(
         maybe_quantize_kv_cache,
@@ -79,17 +84,25 @@ def generate_step(
     @partial(mx.compile, inputs=mx.random.state, outputs=mx.random.state)
     def fast_decode(y: mx.array, h: mx.array):
         yy = mx.concat([y, mx.zeros(32, dtype=mx.int64)])
-        decoder_cache = [KVCache() for _ in range(len(model.fast_layers))]
-        for i in range(1, model.config.num_codebooks):
+        decoder_cache = [QuantizedKVCache() for _ in range(len(model.fast_layers))]
+
+        max_codebooks = model.config.num_codebooks
+        actual_codebooks = max_codebooks - 0
+
+        for i in range(1, actual_codebooks):
             ci_logits = model.forward_generate_fast(
-                h[None], decoder_cache, codebook_idx=i
+                x=h[None],
+                cache=decoder_cache,
+                codebook_idx=i,
             )
             ci = fast_sampler(ci_logits)
             yy[i] = ci
             h = model.embed_audio(i, ci)
         y = yy[None]
-        y_mask = mx.ones_like(y)
-        y_mask[:, -1] = 0
+
+        y_mask = mx.zeros_like(y)
+        y_mask[:, :actual_codebooks] = 1
+
         return y, y_mask
 
     def _step(y, y_mask):
@@ -98,7 +111,6 @@ def generate_step(
             y_mask[None],
             prompt_cache,
         )
-        quantize_cache_fn(prompt_cache)
         y = backbone_sampler(c0_logits)
         y_emb = model.embed_audio(0, y)
         h = mx.concat([h, y_emb], axis=0)
@@ -113,7 +125,6 @@ def generate_step(
                 y_mask[:prefill_step_size][None],
                 prompt_cache,
             )
-            quantize_cache_fn(prompt_cache)
             mx.eval([c.state for c in prompt_cache])
             prompt_progress_callback(prompt_processed_tokens, total_prompt_tokens)
             prompt_processed_tokens += prefill_step_size
@@ -125,7 +136,13 @@ def generate_step(
         mx.eval(y, y_mask)
 
     # hmm
-    # _step = mx.compile(_step, inputs=[prompt_cache])
+    """
+    _step = mx.compile(
+        _step,
+        inputs=[mx.random.state, prompt_cache],
+        outputs=[mx.random.state, prompt_cache],
+    )
+    """
 
     for n in range(max_tokens):
         with mx.stream(stream):
@@ -149,7 +166,7 @@ if __name__ == "__main__":
     print(mx.metal.device_info())
     print(f"{mx.default_device()=}")
 
-    mx.metal.set_wired_limit(10 * (1024**3))
+    # mx.metal.set_wired_limit(10 * (1024**3))
 
     # possibly faster but not for me
     # model.model.set_dtype(mx.float16)
@@ -212,6 +229,7 @@ if __name__ == "__main__":
         backbone_sampler=partial(min_p_sampling, temperature=0.9, min_p=0.1),
         fast_sampler=partial(top_k_sampling, temperature=0.9, top_k=64),
         kv_bits=args.qkv,
+        max_tokens=256,
         prompt_progress_callback=lambda i, tot: print(f"prompt: {i}/{tot}"),
     )
 
@@ -227,6 +245,7 @@ if __name__ == "__main__":
                 mx.metal.stop_capture()
         if mx.all(code == 0):
             break
+        # print(code.tolist())
         codes.append(code)
 
     codes = mx.stack(codes).T[None]
